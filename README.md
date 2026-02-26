@@ -1,10 +1,14 @@
 cape stone project by **__team_10__**
 # online_code_sinppet_manager
 
-## team members: 
+## Team Members: 
+**
+
 1. B23CS032	 - RAYABARAPU SAISRIRAM ANIRUDH
 2. B23EC023	 - MACHARLA SATHVIKA 
 3. B24DS065L - RAPARTHI KALYAN SAI
+
+**
 
 # Features
 
