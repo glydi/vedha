@@ -1,4 +1,0 @@
-bash: docker: command not found...
-Packages providing this file are:
-'docker-cli'
-'podman-docker'
