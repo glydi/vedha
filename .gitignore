@@ -1,0 +1,18 @@
+# Misc
+.DS_Store
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build
+backend/target/
+frontend/dist/
+frontend/node_modules/
+
+# Environment
+.env
+backend/src/main/resources/application-local.properties

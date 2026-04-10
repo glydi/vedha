@@ -1,13 +1,13 @@
-package com.shloka.vedha;
+package com.vedha.snippetmanager;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class VedhaApplication {
+public class SnippetManagerApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(VedhaApplication.class, args);
+		SpringApplication.run(SnippetManagerApplication.class, args);
 	}
 
 }
