@@ -1,2 +1,0 @@
-COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-java    24770   qb   40u  IPv6 104030      0t0  TCP *:webcache (LISTEN)
