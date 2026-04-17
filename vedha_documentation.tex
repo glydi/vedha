@@ -1,0 +1,308 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+\geometry{a4paper, margin=1in}
+
+\title{\textbf{Vedha: Full-Stack Code Snippet Manager \\ Comprehensive Technical Documentation}}
+\author{A Highly Detailed Implementation Report}
+\date{\today}
+
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{cerulean}{rgb}{0.0, 0.48, 0.65}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=cerulean,
+    filecolor=magenta,      
+    urlcolor=blue,
+    pdftitle={Vedha Documentation},
+}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document serves as a deep, comprehensive architectural and implementation reference for \textbf{Vedha}, a modern, real-time code snippet vault. It explores the intricate interactions between the React 19 / Vite frontend ecosystem and the highly secure, WebSocket-enabled Java Spring Boot backend. The paper covers detailed data mappings, the overarching Unified Modeling schemas, intricate state flow algorithms, asynchronous LLM integrations, and robust real-time synchronization mechanisms utilizing STOMP over SockJS.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+Vedha is designed to address the developer problem of storing, cataloging, and securely distributing small segments of executable code or configurations. By integrating an enterprise-grade backend with a modern, high-speed UI framework, Vedha sits firmly as a utility platform engineered for high performance, ease of use, and security.
+
+\subsection{Core Objectives}
+\begin{enumerate}
+    \item \textbf{Immutability \& Integrity:} Ensuring code snippets remain unmodified unless altered by explicitly authorized personnel.
+    \item \textbf{Rapid Discoverability:} Implementing a powerful client-side search indexing system to filter massive arrays of code by tags, languages, dates, and dynamic substring matching.
+    \item \textbf{Collaborative Engineering:} Allowing peers to share private links and edit documents simultaneously through bidirectional WebSocket hooks.
+    \item \textbf{Zero-Setup Extensibility:} Integrating a dynamic tunnelling script (\texttt{ngrok}) that handles proxy routing explicitly in one action.
+\end{enumerate}
+
+\section{System Architecture}
+The application employs a strict \textbf{Three-Tier Logical Architecture} mapped onto a two-tier physical network model.
+
+\subsection{Presentation Layer (Frontend)}
+Developed using \textbf{React 19} and scaffolded with \textbf{Vite 8}. This layer is entirely responsible for UX, data caching, DOM reconciliation, user event handling, and STOMP message parsing.
+
+\subsection{Application Layer (Backend API)}
+Engineered on top of the \textbf{Spring Boot 4.x} ecosystem (leveraging Java 25).
+It runs as a stateless RESTful service using the \textit{Control-Service-Repository} paradigm. All business logic—ranging from data validation to JWT cryptographic signing—is confined entirely to this boundary.
+
+\subsection{Data Access Layer (Database)}
+Relying on \textbf{PostgreSQL 18.x}, the database serves as the ultimate source of truth. Interaction occurs exclusively through \textbf{Hibernate ORM (7.2.x)} which interprets JPQL and Criteria APIs directly into native PostgreSQL queries.
+
+---
+
+\section{Frontend Deep-Dive: React \& Vite}
+The frontend codebase avoids complex Redux-like boilerplate, relying instead on high-order centralized state variables pushed down the React Virtual DOM via props and context isolation.
+
+\subsection{State Management Ecosystem}
+The global state resides inside the parent \texttt{App.jsx} boundary, segmented functionally:
+\begin{itemize}
+    \item \texttt{filtered}: A derivative array used for tracking the visible data subset post-search rendering.
+    \item \texttt{activeSnippet}: Tracks detailed state during View, Edit, or Collaboration modes.
+    \item \texttt{user \& token}: Maintained through synchronization with the HTML5 \texttt{localStorage} API.
+\end{itemize}
+
+\subsection{Real-time Sync \& UI Mutability}
+Vedha utilizes the \texttt{@stomp/stompjs} library over \texttt{SockJS-client} to implement WebSockets in environments that aggressively proxy connections.
+\begin{lstlisting}[language=java, caption=Socket Initialization Paradigm]
+const socket = new SockJS('/ws');
+stompClient.current = new Client({
+  webSocketFactory: () => socket,
+  onConnect: () => {
+    stompClient.current.subscribe('/topic/updates', (msg) => {
+      // Triggered specifically when a colleague mutates the code
+      const body = JSON.parse(msg.body);
+      if (body.id === currentId && body.sender !== localUser) {
+        setFormCode(body.code); 
+      }
+    });
+  }
+});
+\end{lstlisting}
+The above listener ensures \textit{Operational Transformation-like} capabilities where keystrokes trigger asynchronous broadcasts, circumventing the need for an explicit "Reload" function.
+
+\subsection{AI Identifier Integration (Pollinations)}
+To decrease context switching, Vedha dynamically reaches out to an external Generative AI endpoint.
+\begin{itemize}
+    \item \textbf{Endpoint Mapping:} It hits \texttt{https://text.pollinations.ai/...} appending an encoded payload representing the first 500 characters of the payload block.
+    \item \textbf{Fault Tolerance:} Implements rigorous \texttt{response.ok} networking checks. If the public API times out or throws an error space, it gracefully traps the fault into a standard UI-Toasty instead of crashing the React Tree.
+\end{itemize}
+
+\subsection{Syntax Highlighting}
+The application relies on \texttt{react-syntax-highlighter} using the Prism core. It renders the Abstract Syntax Tree (AST) generated by Prism into discrete spans styled under the \textit{Visual Studio Code Dark+ (vscDarkPlus)} configuration.
+
+---
+
+\section{Backend Deep-Dive: Spring Boot Architecture}
+
+\subsection{Database Persistence \& ORM}
+The data model relies heavily on relational mapping paradigms optimized for PostgreSQL. Using \texttt{spring-boot-starter-data-jpa}.
+
+\textbf{Snippet Entity Constraints:}
+\begin{lstlisting}[language=java, caption=Snippet Entity Breakdown]
+@Entity
+@Table(name = "snippets")
+public class Snippet {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, length = 255)
+    private String title;
+
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String code; // Handled as Postgres TEXT data type
+
+    // Many-to-Many resolution mapped automatically via an internal join-table
+    @ManyToMany(fetch = FetchType.LAZY, cascade = CascadeType.MERGE)
+    @JoinTable(
+        name = "snippet_tags",
+        joinColumns = @JoinColumn(name = "snippet_id"),
+        inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    private Set<Tag> tags;
+}
+\end{lstlisting}
+Tags are merged rather than persisted globally across snippets. This ensures orphan tags can be garbage collected while retaining global namespace mapping. 
+
+\subsection{Spring Security \& Authentication Pipelines}
+Security in Vedha relies on Stateless \textbf{JWT (JSON Web Tokens)}.
+
+\begin{enumerate}
+    \item \textbf{Token Issuance:} Upon a verified POST map to \texttt{/api/auth/login}, the \texttt{AuthenticationManager} confirms the plaintext against a \texttt{BCrypt} encoded hash. It signs a JWT payload via HMAC-SHA256 containing absolute claims (Issue Timestamp, Expiration, Username Subject).
+    \item \textbf{Filter Chain Validation:} \texttt{JwtFilter.java} intercepts every downstream route except for open wildcard matchers (such as \texttt{/api/auth/**} or \texttt{/ws/**}). It slices the \texttt{"Bearer "} prefix, validates the digital signature using the application secret, and subsequently populates the \texttt{SecurityContextHolder}.
+\end{enumerate}
+
+\subsection{Advanced CORS \& Ngrok Integration}
+Due to the implementation of the \texttt{share-ngrok.sh} script, the public domain fluctuates dynamically (e.g., \texttt{dbcd-103-57.ngrok-free.app}). 
+To facilitate this, \texttt{SecurityConfig.java} implements an aggressive \texttt{UrlBasedCorsConfigurationSource}:
+\begin{lstlisting}[language=java]
+configuration.setAllowedOriginPatterns(
+    Arrays.asList("http://localhost:5173", "https://*.ngrok-free.app")
+);
+configuration.setAllowCredentials(true);
+\end{lstlisting}
+The use of \texttt{allowedOriginPatterns} instead of \texttt{allowedOrigins} natively supports glob patterns \texttt{(*)}, permitting the backend to accept strictly credentials-based asynchronous XMLHttpRequests from any dynamic ngrok tunnelling instance without throwing an \texttt{Access-Control-Allow-Origin} breach.
+
+---
+
+\section{Real-Time Synchronization (STOMP and Messaging)}
+Real-time interaction requires its own messaging infrastructure running parallel to typical HTTP Servlets.
+
+\subsection{The Broker Configuration}
+In \texttt{WebSocketConfig.java}, Spring is configured to mount an endpoint at \texttt{/ws} and initialize a Simple Message Broker pointing to \texttt{/topic}. 
+
+\subsection{Socket Lifecycle Mapping}
+\begin{itemize}
+    \item \textbf{Connection Phase:} React explicitly generates a handshaking algorithm attempting to upgrade the protocol from \texttt{HTTP1.1} to \texttt{WSS://}.
+    \item \textbf{Subscription Phase:} The UI layer routes its listener specifically targeting \texttt{/topic/updates}.
+    \item \textbf{Publish Phase:} Whenever the React \texttt{setFormCode} is enacted during an active hook, Stomp transmits a mutation string towards \texttt{/app/edit}. The backend processes this string and re-broadcasts it towards \texttt{/topic/updates}, notifying all passive listeners of the new bytecode state.
+\end{itemize}
+
+---
+
+\section{UI Design System \& The "Tech Vault" Aesthetic}
+
+The visual language of Vedha relies almost natively on vanilla internal mechanisms rather than bloated external libraries like Bootstrap or Tailwind.
+
+\subsection{Color Matrix}
+\begin{itemize}
+    \item \textbf{Background Topology:} Operates exclusively in a \texttt{HEX \#000000} absolute black metric. It leverages pure contrasting geometry over ambient gradient lighting.
+    \item \textbf{Interactive Primaries:} Primary interactive objects leverage a cyber-cyan \texttt{HEX \#00e5ff} gradient juxtaposed with sharp whites for readability.
+\end{itemize}
+
+\subsection{Glassmorphism and Spacial Elements}
+Elements such as modals and form cards leverage backdrop-filters (\texttt{backdrop-filter: blur(20px)}) over \texttt{rgba(255,255,255,0.05)} plates to construct a minimalist "x-ray" glass effect.
+
+\subsection{Functional Element Refactoring}
+For improved developer UX, buttons inside the detailed \texttt{<SnippetView>} specifically decouple the \textbf{COPY}, \textbf{SHARE}, \textbf{EDIT}, and \textbf{DELETE} interactive boundaries natively floating atop the immediate code rendering frame. This enforces minimal mouse-travel variance.
+
+---
+
+\section{RESTful API Documentation}
+Vedha implements strict REST parameters encapsulating all major objects. Responses universally bind to standard application/json outputs.
+
+\subsection{Auth Controller (\texttt{/api/auth})}
+\begin{tcolorbox}[colback=white,colframe=cerulean,title=\texttt{POST /api/auth/login}]
+\textbf{Payload Constraints:} \texttt{\{ "username": "string", "password": "string" \}}\\
+\textbf{Expected Response (200 OK):}
+\begin{lstlisting}[language=json]
+{
+  "token": "eyJhbG..", 
+  "username": "user123"
+}
+\end{lstlisting}
+\textbf{Functionality:} Exchanges flat credentials for an encrypted standard Token to be used in all standard \texttt{Authorization: Bearer} sequences over the network layer.
+\end{tcolorbox}
+
+\subsection{Snippet Controller (\texttt{/api/snippets})}
+
+\begin{tcolorbox}[colback=white,colframe=cerulean,title=\texttt{GET /api/snippets}]
+\textbf{Functionality:} Retracts an aggregate map of snippets.\\
+\textbf{Security Overlay:} 
+\begin{itemize}
+    \item If NO \texttt{Authorization} is provided $\rightarrow$ Server limits bounds and fetches STRICTLY where \texttt{isPublic == true}. 
+    \item If \texttt{Authorization} IS provided $\rightarrow$ Server merges all \texttt{isPublic == true} alongside explicitly owned objects OR objects where the current principle resolves inside the \texttt{sharedWith} vector array.
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=white,colframe=cerulean,title=\texttt{POST /api/snippets}]
+\textbf{Payload Setup (Must be Authenticated):}
+\begin{lstlisting}[language=json]
+{
+  "title": "Initialization Routine",
+  "code": "console.log('Online');",
+  "language": "JavaScript",
+  "isPublic": false,
+  "tags": [ { "name": "core"} ],
+  "sharedWith": [ { "username": "admin" } ]
+}
+\end{lstlisting}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=white,colframe=cerulean,title=\texttt{GET /api/snippets/github?url=\dots}]
+\textbf{Functionality:} Circumvents external CORS protections by leveraging the Java \texttt{RestTemplate} server engine as an inherent proxy for GitHub user-content.
+\end{tcolorbox}
+
+---
+
+\section{Extensive Environment Setup Sequence}
+Deploying and verifying a fully working Vedha system mandates coordination of environment elements.
+
+\subsection{Database Construction}
+\begin{lstlisting}[language=SQL]
+CREATE DATABASE vedha;
+CREATE USER qb WITH ENCRYPTED PASSWORD 'root';
+GRANT ALL PRIVILEGES ON DATABASE vedha TO qb;
+\end{lstlisting}
+
+\subsection{Vite Local Mapping (\texttt{vite.config.js})}
+Because ngrok obfuscates explicit origin links, Vite is fundamentally configured to accept connections blindly matching glob sets. Furthermore, \texttt{http-proxy-middleware} variants inside Vite are configured stringently to port-map backend transactions:
+\begin{lstlisting}[language=javascript]
+export default defineConfig({
+  server: {
+    allowedHosts: ['.ngrok-free.app'],
+    proxy: {
+      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      '/ws': { target: 'ws://localhost:8080', ws: true }
+    }
+  }
+})
+\end{lstlisting}
+This \texttt{changeOrigin} declaration completely circumscribes absolute mapping restrictions, meaning the React runtime acts as an implicit tunnel terminating raw Java outputs.
+
+\subsection{The Multi-Process Launch Script}
+To accelerate DevOps testing parameters, \texttt{share-ngrok.sh} acts as an orchestrator. It executes the following concurrent lifecycle hooks:
+\begin{enumerate}
+    \item \textbf{Reap Phase:} Terminates orphaned java and node threads mapped natively to \texttt{port 8080 / 5173}.
+    \item \textbf{Spring Allocation:} Executes Maven via trailing daemon process bounds (\texttt{\&}).
+    \item \textbf{React Allocation:} Spools up \texttt{npm run dev} as a background runner.
+    \item \textbf{Ngrok Hook:} Evaluates the Ngrok binary mapping to port \texttt{5173}. It leverages an explicit system sleep and queries the \texttt{http://localhost:4040/api/tunnels} REST API output using \texttt{curl} and \texttt{grep} algorithms to seamlessly retrieve the dynamic string assigned for the epoch runtime.
+\end{enumerate}
+
+---
+
+\section{Future Scalability Protocols}
+Given the framework's baseline architecture, the platform maintains theoretically infinite horizontal scalability potential if the following procedures are embedded over ensuing milestone sprints:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Redis Parameterizations:} Replace native Session caching parameters embedded strictly to the Java heap with Redis in-memory storage elements to natively permit clustered web servers seamlessly tracking similar authenticated states.
+    \item \textbf{Docker Service Networking:} Aggregate the entire stack into a singular \texttt{compose.yaml} file, leveraging absolute network alias mappings (e.g. \texttt{jdbc:postgresql://db:5432/vedha}) instead of ephemeral localhost loops.
+    \item \textbf{RabbitMQ Broker Scaling:} Upgrading the \texttt{SimpleBrokerMessageHandler} inherent to Spring WebSockets into a dedicated external STOMP Message Queue like RabbitMQ. This circumvents Java thread pool constraints under extreme multi-party code-editing instances.
+\end{itemize}
+
+\end{document}
