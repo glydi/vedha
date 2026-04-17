@@ -28,22 +28,44 @@ public class CodeSnippetController {
     }
 
     @GetMapping
-    public List<CodeSnippet> getAll() {
-        return service.getAll();
+    public List<CodeSnippet> getAll(java.security.Principal principal) {
+        if (principal == null) {
+            return service.getVisibleToAll();
+        }
+        return service.getVisibleToUser(principal.getName());
     }
 
     @GetMapping("/{id}")
-    public CodeSnippet getById(@PathVariable Long id) {
-        return service.getById(id).orElseThrow();
+    public CodeSnippet getById(@PathVariable Long id, java.security.Principal principal) {
+        CodeSnippet snippet = service.getById(id).orElseThrow();
+        if (snippet.isPublic() || (principal != null && snippet.getOwner() != null &&
+                snippet.getOwner().getUsername().equals(principal.getName()))) {
+            return snippet;
+        }
+        throw new RuntimeException("ACCESS_DENIED");
     }
 
     @PutMapping("/{id}")
-    public CodeSnippet update(@PathVariable Long id, @RequestBody CodeSnippet snippet) {
+    public CodeSnippet update(@PathVariable Long id, @RequestBody CodeSnippet snippet,
+            java.security.Principal principal) {
+        if (principal == null)
+            throw new RuntimeException("AUTHENTICATION_REQUIRED");
+        CodeSnippet existing = service.getById(id).orElseThrow();
+        if (existing.getOwner() != null && !existing.getOwner().getUsername().equals(principal.getName())) {
+            throw new RuntimeException("OWNERSHIP_REQUIRED");
+        }
         return service.update(id, snippet);
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable Long id, java.security.Principal principal) {
+        if (principal == null)
+            throw new RuntimeException("AUTHENTICATION_REQUIRED");
+        CodeSnippet existing = service.getById(id).orElseThrow();
+        if (existing.getOwner() != null && !existing.getOwner().getUsername().equals(principal.getName())) {
+            throw new RuntimeException("OWNERSHIP_REQUIRED");
+        }
         service.delete(id);
     }
+
 }

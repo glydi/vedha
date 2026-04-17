@@ -36,9 +36,14 @@ public class CodeSnippetService {
         return repository.save(snippet);
     }
 
-    // Read all
-    public List<CodeSnippet> getAll() {
-        return repository.findAll();
+    // Read all visible to anyone
+    public List<CodeSnippet> getVisibleToAll() {
+        return repository.findByIsPublicTrue();
+    }
+
+    // Read all visible to a specific user
+    public List<CodeSnippet> getVisibleToUser(String username) {
+        return repository.findByIsPublicTrueOrOwnerUsername(username);
     }
 
     // Read by id
