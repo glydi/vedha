@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import "./App.css";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 const API = "http://localhost:8080/api/snippets";
 
 const LANGUAGES = [
-  "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "Go",
-  "Rust", "Ruby", "PHP", "Swift", "Kotlin", "SQL", "HTML", "CSS",
-  "Shell", "Directives", "YAML", "JSON", "Other",
+  "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#", "Go",
+  "Rust", "Ruby", "PHP", "Swift", "Kotlin", "Dart", "SQL", "HTML", "CSS",
+  "Markdown", "Shell", "YAML", "JSON", "XML", "GraphQL", "Docker", "Nginx",
+  "Lua", "Perl", "R", "Objective-C", "Assembly", "Directives", "Other",
 ];
+
 
 /* ────────────────────────────────────────────────────── */
 /*  Notifications                                         */
@@ -32,7 +36,7 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
-        <p style={{ marginTop: '20px', color: '#666' }}>{message}</p>
+        <p style={{ marginTop: '20px', color: '#fff' }}>{message}</p>
         <div className="modal-actions" style={{ marginTop: '40px', display: 'flex', gap: '20px', justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary btn-sm" onClick={onCancel}>CANCEL</button>
           <button className="btn btn-primary btn-sm" style={{ background: '#ff4444', color: '#000', borderColor: '#ff4444' }} onClick={onConfirm}>DELETE</button>
@@ -54,11 +58,23 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [activeSnippet, setActiveSnippet] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [page, setPage] = useState(0);
+  const pageSize = 2;
+
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem("user")) || null);
+  const [token, setToken] = useState(localStorage.getItem("token") || null);
 
   const [formTitle, setFormTitle] = useState("");
   const [formCode, setFormCode] = useState("");
   const [formLang, setFormLang] = useState("JavaScript");
   const [formDesc, setFormDesc] = useState("");
+  const [formTags, setFormTags] = useState([]);
+  const [tempTag, setTempTag] = useState("");
+  const [formPublic, setFormPublic] = useState(true);
+
+  const [authUsername, setAuthUsername] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
 
   const toast = useCallback((message, type = "success") => {
     const id = Date.now();
@@ -69,59 +85,167 @@ function App() {
   const fetchSnippets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(API);
+      const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+      const res = await fetch(API, { headers });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSnippets(data);
       setFiltered(data);
+      return data;
     } catch {
       toast("BACKEND_UNREACHABLE", "error");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, token]);
+  useEffect(() => {
+    fetchSnippets().then(data => {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      if (id && data) {
+        const s = data.find(x => x.id === parseInt(id));
+        if (s) { setActiveSnippet(s); setView("view"); }
+      }
+    });
+  }, [fetchSnippets]);
 
   useEffect(() => {
-    const q = search.toLowerCase();
+    if (!search.trim()) {
+      setFiltered([]);
+      return;
+    }
+    const q = search.trim().toLowerCase();
+    const isExactLang = LANGUAGES.some(l => l.toLowerCase() === q);
+
     setFiltered(
-      snippets.filter(
-        (s) =>
-          s.title?.toLowerCase().includes(q) ||
-          s.language?.toLowerCase().includes(q) ||
-          s.code?.toLowerCase().includes(q)
-      )
+      (snippets || []).filter((s) => {
+        const titleMatch = s.title?.toLowerCase().includes(q);
+        const codeMatch = s.code?.toLowerCase().includes(q);
+        const tagMatch = s.tags?.some((t) => t.name?.toLowerCase().includes(q));
+
+        // If query is an exact language name (like "java"), only match that language exactly.
+        // Otherwise, use substring matching for languages.
+        const langMatch = isExactLang
+          ? s.language?.toLowerCase() === q
+          : s.language?.toLowerCase().includes(q);
+
+        return titleMatch || langMatch || codeMatch || tagMatch;
+      })
     );
+    setPage(0);
   }, [search, snippets]);
 
+  useEffect(() => {
+    setPage(0);
+  }, [view]);
+
   const goList = () => { fetchSnippets(); setView("list"); setSearch(""); };
-  const goCreate = () => { resetForm(); setView("create"); };
+  const goCreate = () => {
+    if (!user) { setView("login"); toast("AUTHENTICATION_REQUIRED", "error"); return; }
+    resetForm(); setView("create");
+  };
   const goView = (id) => {
     const s = snippets.find(x => x.id === id);
     if (s) { setActiveSnippet(s); setView("view"); }
   };
   const goEdit = (s) => {
+    if (!user) { setView("login"); return; }
     setFormTitle(s.title || "");
     setFormCode(s.code || "");
     setFormLang(s.language || "JavaScript");
     setFormDesc(s.description || "");
+    setFormTags(s.tags?.map(t => t.name) || []);
+    setFormPublic(s.isPublic ?? true);
     setActiveSnippet(s);
     setView("edit");
   };
 
   const resetForm = () => {
-    setFormTitle(""); setFormCode(""); setFormLang("JavaScript"); setFormDesc(""); setActiveSnippet(null);
+    setFormTitle(""); setFormCode(""); setFormLang("JavaScript"); setFormDesc("");
+    setFormTags([]); setTempTag(""); setFormPublic(true); setActiveSnippet(null);
   };
+
+  const handleLogin = async () => {
+    try {
+      const res = await fetch("http://localhost:8080/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: authUsername, password: authPassword }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setUser({ username: data.username });
+      setToken(data.token);
+      localStorage.setItem("user", JSON.stringify({ username: data.username }));
+      localStorage.setItem("token", data.token);
+      toast("WELCOME_BACK");
+      goList();
+    } catch {
+      toast("LOGIN_FAILED", "error");
+    }
+  };
+
+  const handleSignup = async () => {
+    try {
+      const res = await fetch("http://localhost:8080/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: authUsername, email: authEmail, password: authPassword }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setUser({ username: data.username });
+      setToken(data.token);
+      localStorage.setItem("user", JSON.stringify({ username: data.username }));
+      localStorage.setItem("token", data.token);
+      toast("ACCOUNT_CREATED");
+      goList();
+    } catch {
+      toast("SIGNUP_FAILED", "error");
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    toast("LOGGED_OUT");
+    setView("home");
+  };
+
+  const addTag = (e) => {
+    if (e.key === "Enter" && tempTag.trim()) {
+      if (!formTags.includes(tempTag.trim())) {
+        setFormTags([...formTags, tempTag.trim()]);
+      }
+      setTempTag("");
+    }
+  };
+
+  const removeTag = (tag) => setFormTags(formTags.filter(t => t !== tag));
 
   const handleSave = async () => {
     if (!formTitle.trim() || !formCode.trim()) return toast("REQUIRED_FIELDS_MISSING", "error");
 
-    const payload = { title: formTitle.trim(), code: formCode, language: formLang, description: formDesc.trim() };
+    const payload = {
+      title: formTitle.trim(),
+      code: formCode,
+      language: formLang,
+      description: formDesc.trim(),
+      isPublic: formPublic,
+      tags: formTags.map(name => ({ name }))
+    };
+
     setLoading(true);
     try {
       const isEdit = view === "edit" && activeSnippet;
       const res = await fetch(isEdit ? `${API}/${activeSnippet.id}` : API, {
         method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
@@ -137,7 +261,10 @@ function App() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`${API}/${deleteTarget.id}`, { method: "DELETE" });
+      const res = await fetch(`${API}/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       if (!res.ok) throw new Error();
       toast("REMOVED");
       setDeleteTarget(null);
@@ -157,6 +284,12 @@ function App() {
     if (text) { setFormCode(text); toast("PASTED"); }
   };
 
+  const shareSnippet = async (s) => {
+    const url = `${window.location.origin}${window.location.pathname}?id=${s.id}`;
+    await navigator.clipboard.writeText(url);
+    toast("LINK_COPIED");
+  };
+
   const formatDate = (iso) => {
     if (!iso) return "";
     return new Date(iso).toISOString().split('T')[0].replace(/-/g, '/');
@@ -164,9 +297,31 @@ function App() {
 
   const truncate = (str, n) => str?.length > n ? str.slice(0, n) : str;
 
+  const scrollUp = () => {
+    if (view === "list") {
+      setPage(p => Math.max(0, p - 1));
+    } else {
+      window.scrollBy({ top: -window.innerHeight, behavior: "smooth" });
+    }
+  };
+
+  const scrollDown = () => {
+    if (view === "list") {
+      setPage(p => (p + 1) * pageSize < filtered.length ? p + 1 : p);
+    } else {
+      window.scrollBy({ top: window.innerHeight, behavior: "smooth" });
+    }
+  };
+
   return (
     <>
       <Toasts toasts={toasts} />
+
+      <div className="scroll-nav">
+        <button className="scroll-btn" onClick={scrollUp} title="GO UP">↑</button>
+        <button className="scroll-btn" onClick={scrollDown} title="GO DOWN">↓</button>
+      </div>
+
       {deleteTarget && (
         <ConfirmModal
           title="DELETE_ENTRY"
@@ -178,18 +333,68 @@ function App() {
 
       <header className="app-header">
         <div className="logo" onClick={() => setView("home")}>
-          <div className="logo-text">VAULT<span>.00</span></div>
+          <div className="logo-text">VEDHA<span>.01</span></div>
         </div>
         <nav className="nav-actions">
           <button className="btn btn-ghost btn-sm" onClick={goList}>BROWSE</button>
           <button className="btn btn-primary btn-sm" onClick={goCreate}>NEW</button>
+          <div className="nav-divider" style={{ width: '1px', background: 'var(--border)', margin: '0 8px' }} />
+          {user ? (
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: '700' }}>{user.username.toUpperCase()}</span>
+              <button className="btn btn-ghost btn-sm" onClick={handleLogout}>LOGOUT</button>
+            </div>
+          ) : (
+            <button className="btn btn-secondary btn-sm" onClick={() => setView("login")}>LOGIN</button>
+          )}
         </nav>
       </header>
 
+      {(view === "login" || view === "signup") && (
+        <section className="form-page">
+          <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+            <h2>{view === "login" ? "ACCESS_RESTRICTED" : "INITIALIZE_ACCOUNT"}</h2>
+            <div className="form-group" style={{ marginTop: '40px' }}>
+              <label className="form-label">USERNAME</label>
+              <input
+                className="form-input"
+                type="text"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {view === "signup" && (
+              <div className="form-group">
+                <label className="form-label">EMAIL</label>
+                <input className="form-input" type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">PASSWORD</label>
+              <input
+                className="form-input"
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (view === "login" ? handleLogin() : handleSignup())}
+              />
+            </div>
+            <div className="form-actions" style={{ flexDirection: 'column', gap: '20px', marginTop: '40px' }}>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={view === "login" ? handleLogin : handleSignup}>
+                {view === "login" ? "AUTHENTICATE" : "REGISTER"}
+              </button>
+              <button className="btn btn-ghost" style={{ width: '100%' }} onClick={() => setView(view === "login" ? "signup" : "login")}>
+                {view === "login" ? "NO_ACCOUNT?_SIGNUP" : "ALREADY_REGISTERED?_LOGIN"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {view === "home" && (
         <section className="hero-section">
-          <h1>THE VAULT</h1>
-          <p className="hero-subtitle">MINIMALIST REPOSITORY FOR ARCHIVING CODE FRAGMENTS.</p>
+          <h1>VEDHA</h1>
           <div className="hero-actions">
             <button className="btn btn-primary" onClick={goCreate}>NEW_ENTRY</button>
             <button className="btn btn-secondary" onClick={goList}>BROWSE_ENTRIES</button>
@@ -219,11 +424,30 @@ function App() {
 
           {loading && <div className="spinner" />}
 
+          {!loading && !search.trim() && (
+            <div style={{ textAlign: 'center', marginTop: '100px', opacity: 0.5 }}>
+              <h3>ENTER_QUERY_TO_REVEAL_DATA</h3>
+              <p style={{ marginTop: '10px', fontSize: '12px' }}>BEGIN TYPING TO ACCESS THE VAULT</p>
+            </div>
+          )}
+
+          {filtered.length === 0 && search.trim() && !loading && (
+            <div style={{ textAlign: 'center', marginTop: '100px', opacity: 0.5 }}>
+              <h3>NO_RESULTS_FOUND</h3>
+            </div>
+          )}
+
           <div className="snippet-grid">
-            {filtered.map((s) => (
+            {filtered.slice(page * pageSize, (page + 1) * pageSize).map((s) => (
               <div key={s.id} className="card snippet-card" onClick={() => goView(s.id)}>
-                <span className="snippet-lang">{s.language}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span className="snippet-lang">{s.language}</span>
+                  {!s.isPublic && <span className="meta-chip">PRIVATE</span>}
+                </div>
                 <span className="snippet-title">{s.title}</span>
+                <div className="tag-container" style={{ marginBottom: '16px' }}>
+                  {s.tags?.map(t => <span key={t.id} className="tag-chip">{t.name}</span>)}
+                </div>
                 <div className="snippet-preview">{truncate(s.code, 100)}</div>
                 <div className="snippet-meta">
                   <span>{formatDate(s.createdAt)}</span>
@@ -231,6 +455,12 @@ function App() {
               </div>
             ))}
           </div>
+
+          {filtered.length > pageSize && (
+            <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '10px', letterSpacing: '0.2em', opacity: 0.5 }}>
+              PAGE {page + 1} OF {Math.ceil(filtered.length / pageSize)}
+            </div>
+          )}
         </section>
       )}
 
@@ -239,15 +469,29 @@ function App() {
           <div className="detail-header">
             <h2>{activeSnippet.title}</h2>
           </div>
-          <div className="detail-meta-bar" style={{ marginTop: '20px' }}>
+          <div className="detail-meta-bar" style={{ marginTop: '20px', display: 'flex', gap: '20px' }}>
             <span className="meta-chip">[{activeSnippet.language}]</span>
             <span className="meta-chip">DATE: {formatDate(activeSnippet.createdAt)}</span>
+            {!activeSnippet.isPublic && <span className="meta-chip" style={{ color: '#ff4444' }}>PRIVATE_ENTRY</span>}
           </div>
 
-          <div className="detail-code">{activeSnippet.code}</div>
+          <div className="tag-container">
+            {activeSnippet.tags?.map(t => <span key={t.id} className="tag-chip active">{t.name}</span>)}
+          </div>
+
+          <div className="detail-code">
+            <SyntaxHighlighter
+              language={activeSnippet.language?.toLowerCase() || "javascript"}
+              style={vscDarkPlus}
+              customStyle={{ background: 'transparent', padding: 0 }}
+            >
+              {activeSnippet.code}
+            </SyntaxHighlighter>
+          </div>
 
           <div className="detail-actions">
             <button className="btn btn-primary btn-sm" onClick={() => copyCode(activeSnippet.code)}>COPY</button>
+            <button className="btn btn-primary btn-sm" onClick={() => shareSnippet(activeSnippet)}>SHARE</button>
             <button className="btn btn-secondary btn-sm" onClick={() => goEdit(activeSnippet)}>EDIT</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(activeSnippet)}>DELETE</button>
             <button className="btn btn-ghost btn-sm" onClick={goList}>RETURN</button>
@@ -259,20 +503,59 @@ function App() {
         <section className="form-page">
           <div className="card">
             <h2>{view === "edit" ? "UPDATE_ENTRY" : "INITIALIZE_ENTRY"}</h2>
-            <div className="form-group" style={{ marginTop: '40px' }}>
-              <label className="form-label">IDENTIFIER</label>
-              <input className="form-input" type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginTop: '40px' }}>
+              <div className="form-group">
+                <label className="form-label">IDENTIFIER</label>
+                <input className="form-input" type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">LANGUAGE</label>
+                <select className="form-select" value={formLang} onChange={(e) => setFormLang(e.target.value)}>
+                  {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
             </div>
+
             <div className="form-group">
-              <label className="form-label">LANGUAGE</label>
-              <select className="form-select" value={formLang} onChange={(e) => setFormLang(e.target.value)}>
-                {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
+              <label className="form-label">TAGS (PRESS ENTER)</label>
+              <div className="tag-input-container">
+                {formTags.map(t => (
+                  <div key={t} className="tag-pill">
+                    {t} <button onClick={() => removeTag(t)}>&times;</button>
+                  </div>
+                ))}
+                <input
+                  className="form-input"
+                  style={{ border: 'none', borderBottom: '1px solid var(--border)', flex: 1 }}
+                  type="text"
+                  value={tempTag}
+                  onChange={(e) => setTempTag(e.target.value)}
+                  onKeyDown={addTag}
+                  placeholder="ADD TAG..."
+                />
+              </div>
             </div>
+
+            <div className="form-group">
+              <label className="form-label">ACCESS_CONTROL</label>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <button
+                  className={`btn btn-sm ${formPublic ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setFormPublic(true)}
+                >PUBLIC</button>
+                <button
+                  className={`btn btn-sm ${!formPublic ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setFormPublic(false)}
+                >PRIVATE</button>
+              </div>
+            </div>
+
             <div className="form-group">
               <label className="form-label">BLOCK</label>
               <textarea className="code-textarea" value={formCode} onChange={(e) => setFormCode(e.target.value)} />
             </div>
+
             <div className="form-actions" style={{ display: 'flex', gap: '20px', marginTop: '40px' }}>
               <button className="btn btn-primary" onClick={handleSave}>COMMIT</button>
               <button className="btn btn-secondary" onClick={() => setView("home")}>DISCARD</button>

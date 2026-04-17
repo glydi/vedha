@@ -12,13 +12,18 @@ import java.util.List;
 public class CodeSnippetController {
 
     private final CodeSnippetService service;
+    private final com.shloka.vedha.repo.UserRepository userRepository;
 
-    public CodeSnippetController(CodeSnippetService service) {
+    public CodeSnippetController(CodeSnippetService service, com.shloka.vedha.repo.UserRepository userRepository) {
         this.service = service;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
-    public CodeSnippet create(@RequestBody CodeSnippet snippet) {
+    public CodeSnippet create(@RequestBody CodeSnippet snippet, java.security.Principal principal) {
+        if (principal != null) {
+            userRepository.findByUsername(principal.getName()).ifPresent(snippet::setOwner);
+        }
         return service.save(snippet);
     }
 
