@@ -38,8 +38,9 @@ public class CodeSnippetController {
     @GetMapping("/{id}")
     public CodeSnippet getById(@PathVariable Long id, java.security.Principal principal) {
         CodeSnippet snippet = service.getById(id).orElseThrow();
-        if (snippet.isPublic() || (principal != null && snippet.getOwner() != null &&
-                snippet.getOwner().getUsername().equals(principal.getName()))) {
+        if (snippet.isPublic() || (principal != null
+                && ((snippet.getOwner() != null && snippet.getOwner().getUsername().equals(principal.getName())) ||
+                        snippet.getSharedWith().stream().anyMatch(u -> u.getUsername().equals(principal.getName()))))) {
             return snippet;
         }
         throw new RuntimeException("ACCESS_DENIED");
@@ -66,6 +67,19 @@ public class CodeSnippetController {
             throw new RuntimeException("OWNERSHIP_REQUIRED");
         }
         service.delete(id);
+    }
+
+    @GetMapping("/github")
+    public java.util.Map<String, String> fetchGist(@RequestParam String url) {
+        org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+        try {
+            // For simplicity, we assume gist raw URL or direct file URL
+            // In a real app, we might use GitHub API
+            String content = restTemplate.getForObject(url, String.class);
+            return java.util.Map.of("code", content != null ? content : "");
+        } catch (Exception e) {
+            throw new RuntimeException("FAILED_TO_FETCH_GITHUB_CONTENT");
+        }
     }
 
 }

@@ -37,6 +37,12 @@ public class CodeSnippet {
     @JoinTable(name = "snippet_tags", joinColumns = @JoinColumn(name = "snippet_id"), inverseJoinColumns = @JoinColumn(name = "tag_id"))
     private Set<Tag> tags = new HashSet<>();
 
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "snippet_access", joinColumns = @JoinColumn(name = "snippet_id"), inverseJoinColumns = @JoinColumn(name = "user_id"))
+    private Set<User> sharedWith = new HashSet<>();
+
+    private String githubUrl;
+
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
@@ -126,5 +132,21 @@ public class CodeSnippet {
 
     public void setOwner(User owner) {
         this.owner = owner;
+    }
+
+    public Set<User> getSharedWith() {
+        return sharedWith;
+    }
+
+    public void setSharedWith(Set<User> sharedWith) {
+        this.sharedWith = sharedWith;
+    }
+
+    public String getGithubUrl() {
+        return githubUrl;
+    }
+
+    public void setGithubUrl(String githubUrl) {
+        this.githubUrl = githubUrl;
     }
 }

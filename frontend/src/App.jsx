@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import "./App.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
 const API = "http://localhost:8080/api/snippets";
 
@@ -59,7 +61,15 @@ function App() {
   const [activeSnippet, setActiveSnippet] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [page, setPage] = useState(0);
-  const pageSize = 2;
+  const pageSize = 5; // Increased page size
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedLangs, setSelectedLangs] = useState([]);
+
+  const [githubUrl, setGithubUrl] = useState("");
+  const [isCollabActive, setIsCollabActive] = useState(false);
+  const stompClient = useRef(null);
 
   const [user, setUser] = useState(JSON.parse(localStorage.getItem("user")) || null);
   const [token, setToken] = useState(localStorage.getItem("token") || null);
@@ -71,6 +81,8 @@ function App() {
   const [formTags, setFormTags] = useState([]);
   const [tempTag, setTempTag] = useState("");
   const [formPublic, setFormPublic] = useState(true);
+  const [formSharedWith, setFormSharedWith] = useState([]);
+  const [tempShareUser, setTempShareUser] = useState("");
 
   const [authUsername, setAuthUsername] = useState("");
   const [authEmail, setAuthEmail] = useState("");
@@ -81,6 +93,47 @@ function App() {
     setToasts((t) => [...t, { id, message, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2000);
   }, []);
+
+  const connectWebSocket = useCallback((snippetId) => {
+    if (stompClient.current) return;
+
+    const socket = new SockJS('http://localhost:8080/ws');
+    stompClient.current = new Client({
+      webSocketFactory: () => socket,
+      onConnect: () => {
+        setIsCollabActive(true);
+        stompClient.current.subscribe('/topic/updates', (msg) => {
+          const body = JSON.parse(msg.body);
+          if (body.id === snippetId && body.sender !== (user?.username || "anon")) {
+            setFormCode(body.code);
+          }
+        });
+      },
+      onDisconnect: () => setIsCollabActive(false),
+    });
+    stompClient.current.activate();
+  }, [user]);
+
+  const disconnectWebSocket = useCallback(() => {
+    if (stompClient.current) {
+      stompClient.current.deactivate();
+      stompClient.current = null;
+      setIsCollabActive(false);
+    }
+  }, []);
+
+  const sendUpdate = (code) => {
+    if (stompClient.current && stompClient.current.connected && activeSnippet) {
+      stompClient.current.publish({
+        destination: '/app/edit',
+        body: JSON.stringify({
+          id: activeSnippet.id,
+          code,
+          sender: user?.username || "anon"
+        })
+      });
+    }
+  };
 
   const fetchSnippets = useCallback(async () => {
     setLoading(true);
@@ -110,30 +163,43 @@ function App() {
   }, [fetchSnippets]);
 
   useEffect(() => {
-    if (!search.trim()) {
+    if (!search.trim() && !startDate && !endDate && selectedLangs.length === 0) {
       setFiltered([]);
       return;
     }
-    const q = search.trim().toLowerCase();
-    const isExactLang = LANGUAGES.some(l => l.toLowerCase() === q);
 
-    setFiltered(
-      (snippets || []).filter((s) => {
+    let results = (snippets || []);
+
+    // 1. Keyword search (and '*' logic)
+    const q = search.trim().toLowerCase();
+    if (q && q !== "*") {
+      results = results.filter((s) => {
         const titleMatch = s.title?.toLowerCase().includes(q);
         const codeMatch = s.code?.toLowerCase().includes(q);
         const tagMatch = s.tags?.some((t) => t.name?.toLowerCase().includes(q));
+        const idMatch = s.id.toString().includes(q);
+        return titleMatch || codeMatch || tagMatch || idMatch;
+      });
+    }
 
-        // If query is an exact language name (like "java"), only match that language exactly.
-        // Otherwise, use substring matching for languages.
-        const langMatch = isExactLang
-          ? s.language?.toLowerCase() === q
-          : s.language?.toLowerCase().includes(q);
+    // 2. Language filters
+    if (selectedLangs.length > 0) {
+      results = results.filter(s => selectedLangs.includes(s.language));
+    }
 
-        return titleMatch || langMatch || codeMatch || tagMatch;
-      })
-    );
+    // 3. Date range filters
+    if (startDate) {
+      results = results.filter(s => new Date(s.createdAt) >= new Date(startDate));
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      results = results.filter(s => new Date(s.createdAt) <= end);
+    }
+
+    setFiltered(results);
     setPage(0);
-  }, [search, snippets]);
+  }, [search, snippets, startDate, endDate, selectedLangs]);
 
   useEffect(() => {
     setPage(0);
@@ -156,13 +222,27 @@ function App() {
     setFormDesc(s.description || "");
     setFormTags(s.tags?.map(t => t.name) || []);
     setFormPublic(s.isPublic ?? true);
+    setFormSharedWith(s.sharedWith?.map(u => u.username) || []);
     setActiveSnippet(s);
     setView("edit");
+    connectWebSocket(s.id);
+  };
+
+  const handleGoHome = () => {
+    disconnectWebSocket();
+    setView("home");
+  };
+
+  const handleFinishEditing = () => {
+    disconnectWebSocket();
+    goList();
   };
 
   const resetForm = () => {
     setFormTitle(""); setFormCode(""); setFormLang("JavaScript"); setFormDesc("");
     setFormTags([]); setTempTag(""); setFormPublic(true); setActiveSnippet(null);
+    setFormSharedWith([]); setTempShareUser("");
+    disconnectWebSocket();
   };
 
   const handleLogin = async () => {
@@ -234,7 +314,9 @@ function App() {
       language: formLang,
       description: formDesc.trim(),
       isPublic: formPublic,
-      tags: formTags.map(name => ({ name }))
+      tags: formTags.map(name => ({ name })),
+      sharedWith: formSharedWith.map(username => ({ username })),
+      githubUrl: githubUrl
     };
 
     setLoading(true);
@@ -250,7 +332,7 @@ function App() {
       });
       if (!res.ok) throw new Error();
       toast(isEdit ? "UPDATED" : "STORED");
-      goList();
+      handleFinishEditing();
     } catch {
       toast("SAVE_ERROR", "error");
     } finally {
@@ -272,6 +354,30 @@ function App() {
     } catch {
       toast("DELETE_ERROR", "error");
     }
+  };
+
+  const importFromGithub = async () => {
+    if (!githubUrl.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8080/api/snippets/github?url=${encodeURIComponent(githubUrl)}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFormCode(data.code);
+      toast("GITHUB_IMPORT_SUCCESS");
+    } catch {
+      toast("GITHUB_IMPORT_ERROR", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const maskId = (id) => `*****${id.toString().slice(-3)}`;
+
+  const toggleLang = (lang) => {
+    setSelectedLangs(prev =>
+      prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
+    );
   };
 
   const copyCode = async (c) => {
@@ -332,7 +438,7 @@ function App() {
       )}
 
       <header className="app-header">
-        <div className="logo" onClick={() => setView("home")}>
+        <div className="logo" onClick={handleGoHome}>
           <div className="logo-text">VEDHA<span>.01</span></div>
         </div>
         <nav className="nav-actions">
@@ -414,11 +520,47 @@ function App() {
             <div className="search-box">
               <input
                 type="text"
-                placeholder="SEARCH_QUERY..."
+                placeholder="SEARCH_QUERY (use * for all)..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 autoFocus
               />
+            </div>
+            <div className="filter-bar">
+              <div className="filter-group">
+                <label className="form-label">START_DATE</label>
+                <input className="filter-input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </div>
+              <div className="filter-group">
+                <label className="form-label">END_DATE</label>
+                <input className="filter-input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              </div>
+              <div className="filter-group" style={{ flex: 1 }}>
+                <label className="form-label">LANGUAGE_FILTER</label>
+                <select
+                  className="filter-input"
+                  style={{ width: '100%' }}
+                  onChange={(e) => {
+                    if (e.target.value && !selectedLangs.includes(e.target.value)) {
+                      setSelectedLangs([...selectedLangs, e.target.value]);
+                    }
+                  }}
+                  value=""
+                >
+                  <option value="" disabled>SELECT_LANGUAGE...</option>
+                  {LANGUAGES.map(l => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                  {selectedLangs.map(l => (
+                    <span key={l} className="tag-chip active" onClick={() => toggleLang(l)}>
+                      {l} &times;
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(""); setStartDate(""); setEndDate(""); setSelectedLangs([]); }}>RESET_FILTERS</button>
             </div>
           </div>
 
@@ -441,7 +583,10 @@ function App() {
             {filtered.slice(page * pageSize, (page + 1) * pageSize).map((s) => (
               <div key={s.id} className="card snippet-card" onClick={() => goView(s.id)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <span className="snippet-lang">{s.language}</span>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <span className="id-display">{maskId(s.id)}</span>
+                    <span className="snippet-lang">{s.language}</span>
+                  </div>
                   {!s.isPublic && <span className="meta-chip">PRIVATE</span>}
                 </div>
                 <span className="snippet-title">{s.title}</span>
@@ -499,10 +644,22 @@ function App() {
         </section>
       )}
 
+      {isCollabActive && <div className="collab-status">LIVE_COLLAB_ACTIVE</div>}
+
       {(view === "create" || view === "edit") && (
         <section className="form-page">
           <div className="card">
             <h2>{view === "edit" ? "UPDATE_ENTRY" : "INITIALIZE_ENTRY"}</h2>
+
+            <div className="github-import">
+              <input
+                className="form-input"
+                placeholder="GITHUB_GIST_RAW_URL"
+                value={githubUrl}
+                onChange={e => setGithubUrl(e.target.value)}
+              />
+              <button className="btn btn-primary" onClick={importFromGithub}>IMPORT</button>
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginTop: '40px' }}>
               <div className="form-group">
@@ -537,28 +694,62 @@ function App() {
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">ACCESS_CONTROL</label>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <button
-                  className={`btn btn-sm ${formPublic ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setFormPublic(true)}
-                >PUBLIC</button>
-                <button
-                  className={`btn btn-sm ${!formPublic ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setFormPublic(false)}
-                >PRIVATE</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' }}>
+              <div className="form-group">
+                <label className="form-label">ACCESS_CONTROL</label>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  <button
+                    className={`btn btn-sm ${formPublic ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setFormPublic(true)}
+                  >PUBLIC</button>
+                  <button
+                    className={`btn btn-sm ${!formPublic ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setFormPublic(false)}
+                  >PRIVATE</button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">SHARE_WITH_USER</label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input
+                    className="form-input"
+                    placeholder="USERNAME"
+                    value={tempShareUser}
+                    onChange={e => setTempShareUser(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && tempShareUser.trim()) {
+                        setFormSharedWith([...formSharedWith, tempShareUser.trim()]);
+                        setTempShareUser("");
+                      }
+                    }}
+                  />
+                </div>
+                <div className="access-control-list">
+                  {formSharedWith.map(u => (
+                    <div key={u} className="access-item">
+                      {u} <button className="btn btn-ghost btn-sm" onClick={() => setFormSharedWith(formSharedWith.filter(x => x !== u))}>REMOVE</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="form-group">
               <label className="form-label">BLOCK</label>
-              <textarea className="code-textarea" value={formCode} onChange={(e) => setFormCode(e.target.value)} />
+              <textarea
+                className="code-textarea"
+                value={formCode}
+                onChange={(e) => {
+                  setFormCode(e.target.value);
+                  sendUpdate(e.target.value);
+                }}
+              />
             </div>
 
             <div className="form-actions" style={{ display: 'flex', gap: '20px', marginTop: '40px' }}>
               <button className="btn btn-primary" onClick={handleSave}>COMMIT</button>
-              <button className="btn btn-secondary" onClick={() => setView("home")}>DISCARD</button>
+              <button className="btn btn-secondary" onClick={handleFinishEditing}>DISCARD</button>
             </div>
           </div>
         </section>

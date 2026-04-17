@@ -17,10 +17,13 @@ public class CodeSnippetService {
 
     private final CodeSnippetRepository repository;
     private final TagRepository tagRepository;
+    private final com.shloka.vedha.repo.UserRepository userRepository;
 
-    public CodeSnippetService(CodeSnippetRepository repository, TagRepository tagRepository) {
+    public CodeSnippetService(CodeSnippetRepository repository, TagRepository tagRepository,
+            com.shloka.vedha.repo.UserRepository userRepository) {
         this.repository = repository;
         this.tagRepository = tagRepository;
+        this.userRepository = userRepository;
     }
 
     // Create
@@ -33,6 +36,13 @@ public class CodeSnippetService {
                     .collect(Collectors.toSet());
             snippet.setTags(managedTags);
         }
+        if (snippet.getSharedWith() != null) {
+            Set<com.shloka.vedha.model.User> managedUsers = snippet.getSharedWith().stream()
+                    .map(u -> userRepository.findByUsername(u.getUsername()).orElse(null))
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toSet());
+            snippet.setSharedWith(managedUsers);
+        }
         return repository.save(snippet);
     }
 
@@ -43,7 +53,7 @@ public class CodeSnippetService {
 
     // Read all visible to a specific user
     public List<CodeSnippet> getVisibleToUser(String username) {
-        return repository.findByIsPublicTrueOrOwnerUsername(username);
+        return repository.findVisibleToUser(username);
     }
 
     // Read by id
@@ -61,6 +71,7 @@ public class CodeSnippetService {
                     existing.setLanguage(updatedSnippet.getLanguage());
                     existing.setDescription(updatedSnippet.getDescription());
                     existing.setPublic(updatedSnippet.isPublic());
+                    existing.setGithubUrl(updatedSnippet.getGithubUrl());
 
                     if (updatedSnippet.getTags() != null) {
                         Set<Tag> managedTags = updatedSnippet.getTags().stream()
@@ -68,6 +79,14 @@ public class CodeSnippetService {
                                         .orElseGet(() -> tagRepository.save(new Tag(tag.getName()))))
                                 .collect(Collectors.toSet());
                         existing.setTags(managedTags);
+                    }
+
+                    if (updatedSnippet.getSharedWith() != null) {
+                        Set<com.shloka.vedha.model.User> managedUsers = updatedSnippet.getSharedWith().stream()
+                                .map(u -> userRepository.findByUsername(u.getUsername()).orElse(null))
+                                .filter(java.util.Objects::nonNull)
+                                .collect(Collectors.toSet());
+                        existing.setSharedWith(managedUsers);
                     }
 
                     return repository.save(existing);
