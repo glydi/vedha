@@ -382,7 +382,8 @@ function App() {
     }
     setLoading(true);
     try {
-      const response = await fetch("https://text.pollinations.ai/prompt/" + encodeURIComponent("Suggest a short, 1 to 4 word camelCase or PascalCase identifier/name/title for this code snippet: " + formCode.substring(0, 500)));
+      const response = await fetch("https://text.pollinations.ai/" + encodeURIComponent("Suggest a short, 1 to 4 word camelCase or PascalCase identifier/name/title for this code snippet: " + formCode.substring(0, 500)));
+      if (!response.ok) throw new Error();
       const text = await response.text();
       setFormTitle(text.replace(/[^a-zA-Z0-9_\s]/g, '').trim().split('\n')[0]);
       toast("AI SUGGESTED AN IDENTIFIER");
@@ -645,6 +646,14 @@ function App() {
             {activeSnippet.tags?.map(t => <span key={t.id} className="tag-chip active">{t.name}</span>)}
           </div>
 
+          <div className="detail-actions" style={{ marginBottom: '20px' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => copyCode(activeSnippet.code)}>COPY</button>
+            <button className="btn btn-primary btn-sm" onClick={() => shareSnippet(activeSnippet)}>SHARE</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => goEdit(activeSnippet)}>EDIT</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(activeSnippet)}>DELETE</button>
+            <button className="btn btn-ghost btn-sm" onClick={goList}>RETURN</button>
+          </div>
+
           <div className="detail-code">
             <SyntaxHighlighter
               language={activeSnippet.language?.toLowerCase() || "javascript"}
@@ -653,14 +662,6 @@ function App() {
             >
               {activeSnippet.code}
             </SyntaxHighlighter>
-          </div>
-
-          <div className="detail-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => copyCode(activeSnippet.code)}>COPY</button>
-            <button className="btn btn-primary btn-sm" onClick={() => shareSnippet(activeSnippet)}>SHARE</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => goEdit(activeSnippet)}>EDIT</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(activeSnippet)}>DELETE</button>
-            <button className="btn btn-ghost btn-sm" onClick={goList}>RETURN</button>
           </div>
         </section>
       )}
