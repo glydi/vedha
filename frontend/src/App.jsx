@@ -5,7 +5,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-const API = "http://localhost:8080/api/snippets";
+const API = "/api/snippets";
 
 const LANGUAGES = [
   "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#", "Go",
@@ -97,7 +97,7 @@ function App() {
   const connectWebSocket = useCallback((snippetId) => {
     if (stompClient.current) return;
 
-    const socket = new SockJS('http://localhost:8080/ws');
+    const socket = new SockJS('/ws');
     stompClient.current = new Client({
       webSocketFactory: () => socket,
       onConnect: () => {
@@ -207,8 +207,12 @@ function App() {
 
   const goList = () => { fetchSnippets(); setView("list"); setSearch(""); };
   const goCreate = () => {
-    if (!user) { setView("login"); toast("AUTHENTICATION_REQUIRED", "error"); return; }
-    resetForm(); setView("create");
+    resetForm();
+    if (!user) {
+      setFormPublic(true);
+      toast("LOG_IN_TO_CREATE_PRIVATE_SNIPPETS");
+    }
+    setView("create");
   };
   const goView = (id) => {
     const s = snippets.find(x => x.id === id);
@@ -247,7 +251,7 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/auth/login", {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUsername, password: authPassword }),
@@ -267,7 +271,7 @@ function App() {
 
   const handleSignup = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/auth/signup", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUsername, email: authEmail, password: authPassword }),
@@ -322,12 +326,11 @@ function App() {
     setLoading(true);
     try {
       const isEdit = view === "edit" && activeSnippet;
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(isEdit ? `${API}/${activeSnippet.id}` : API, {
         method: isEdit ? "PUT" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
@@ -360,13 +363,31 @@ function App() {
     if (!githubUrl.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8080/api/snippets/github?url=${encodeURIComponent(githubUrl)}`);
+      const res = await fetch(`/api/snippets/github?url=${encodeURIComponent(githubUrl)}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setFormCode(data.code);
       toast("GITHUB_IMPORT_SUCCESS");
     } catch {
       toast("GITHUB_IMPORT_ERROR", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuggestIdentifier = async () => {
+    if (!formCode.trim()) {
+      toast("PLEASE ENTER SOME CODE FIRST", "error");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch("https://text.pollinations.ai/prompt/" + encodeURIComponent("Suggest a short, 1 to 4 word camelCase or PascalCase identifier/name/title for this code snippet: " + formCode.substring(0, 500)));
+      const text = await response.text();
+      setFormTitle(text.replace(/[^a-zA-Z0-9_\s]/g, '').trim().split('\n')[0]);
+      toast("AI SUGGESTED AN IDENTIFIER");
+    } catch {
+      toast("LLM_SUGGESTION_FAILED", "error");
     } finally {
       setLoading(false);
     }
@@ -663,7 +684,10 @@ function App() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginTop: '40px' }}>
               <div className="form-group">
-                <label className="form-label">IDENTIFIER</label>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>IDENTIFIER</span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={handleSuggestIdentifier} disabled={loading} style={{ padding: '2px 6px', fontSize: '10px' }}>AI SUGGEST</button>
+                </label>
                 <input className="form-input" type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} />
               </div>
               <div className="form-group">
@@ -699,12 +723,20 @@ function App() {
                 <label className="form-label">ACCESS_CONTROL</label>
                 <div style={{ display: 'flex', gap: '20px' }}>
                   <button
+                    type="button"
                     className={`btn btn-sm ${formPublic ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setFormPublic(true)}
                   >PUBLIC</button>
                   <button
+                    type="button"
                     className={`btn btn-sm ${!formPublic ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setFormPublic(false)}
+                    onClick={() => {
+                      if (!user) {
+                        toast("LOG_IN_TO_CREATE_PRIVATE_SNIPPETS", "error");
+                        return;
+                      }
+                      setFormPublic(false);
+                    }}
                   >PRIVATE</button>
                 </div>
               </div>

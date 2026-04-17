@@ -94,10 +94,12 @@ public class CodeSnippet {
         this.description = description;
     }
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isPublic")
     public boolean isPublic() {
         return isPublic;
     }
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isPublic")
     public void setPublic(boolean aPublic) {
         isPublic = aPublic;
     }

@@ -8,6 +8,6 @@ import java.util.List;
 public interface CodeSnippetRepository extends JpaRepository<CodeSnippet, Long> {
     List<CodeSnippet> findByIsPublicTrue();
 
-    @org.springframework.data.jpa.repository.Query("SELECT s FROM CodeSnippet s LEFT JOIN s.sharedWith sw WHERE s.isPublic = true OR s.owner.username = :username OR sw.username = :username")
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT s FROM CodeSnippet s LEFT JOIN s.owner o LEFT JOIN s.sharedWith sw WHERE s.isPublic = true OR o.username = :username OR sw.username = :username")
     List<CodeSnippet> findVisibleToUser(@org.springframework.data.repository.query.Param("username") String username);
 }

@@ -8,7 +8,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/snippets")
-@CrossOrigin
 public class CodeSnippetController {
 
     private final CodeSnippetService service;
@@ -53,18 +52,22 @@ public class CodeSnippetController {
             throw new RuntimeException("AUTHENTICATION_REQUIRED");
         CodeSnippet existing = service.getById(id).orElseThrow();
         if (existing.getOwner() != null && !existing.getOwner().getUsername().equals(principal.getName())) {
-            throw new RuntimeException("OWNERSHIP_REQUIRED");
+            boolean isShared = existing.getSharedWith() != null
+                    && existing.getSharedWith().stream().anyMatch(u -> u.getUsername().equals(principal.getName()));
+            if (!isShared) {
+                throw new RuntimeException("OWNERSHIP_REQUIRED");
+            }
         }
         return service.update(id, snippet);
     }
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id, java.security.Principal principal) {
-        if (principal == null)
-            throw new RuntimeException("AUTHENTICATION_REQUIRED");
         CodeSnippet existing = service.getById(id).orElseThrow();
-        if (existing.getOwner() != null && !existing.getOwner().getUsername().equals(principal.getName())) {
-            throw new RuntimeException("OWNERSHIP_REQUIRED");
+        if (existing.getOwner() != null) {
+            if (principal == null || !existing.getOwner().getUsername().equals(principal.getName())) {
+                throw new RuntimeException("OWNERSHIP_REQUIRED");
+            }
         }
         service.delete(id);
     }
@@ -73,8 +76,6 @@ public class CodeSnippetController {
     public java.util.Map<String, String> fetchGist(@RequestParam String url) {
         org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
         try {
-            // For simplicity, we assume gist raw URL or direct file URL
-            // In a real app, we might use GitHub API
             String content = restTemplate.getForObject(url, String.class);
             return java.util.Map.of("code", content != null ? content : "");
         } catch (Exception e) {
