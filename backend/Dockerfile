@@ -21,12 +21,6 @@ COPY --from=builder /app/target/*.jar app.jar
 ENV PORT=8080
 EXPOSE ${PORT}
 
-# Create startup script that passes PORT to Spring Boot
-RUN echo '#!/bin/bash\n\
-java -jar app.jar \\\n\
-  --server.port=${PORT} \\\n\
-  --spring.profiles.active=render' > /app/start.sh && \
-    chmod +x /app/start.sh
-
-ENTRYPOINT ["/app/start.sh"]
+# Spring Boot reads environment variables and application-render.properties
+ENTRYPOINT ["java", "-jar", "app.jar", "--spring.profiles.active=render"]
 
