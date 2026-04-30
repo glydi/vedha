@@ -17,8 +17,16 @@ WORKDIR /app
 
 COPY --from=builder /app/target/*.jar app.jar
 
-# Render sets PORT env var
+# Render sets PORT env var, default to 8080
 ENV PORT=8080
 EXPOSE ${PORT}
 
-ENTRYPOINT ["java", "-jar", "app.jar", "--spring.profiles.active=render"]
+# Create startup script that passes PORT to Spring Boot
+RUN echo '#!/bin/bash\n\
+java -jar app.jar \\\n\
+  --server.port=${PORT} \\\n\
+  --spring.profiles.active=render' > /app/start.sh && \
+    chmod +x /app/start.sh
+
+ENTRYPOINT ["/app/start.sh"]
+
