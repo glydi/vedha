@@ -5,7 +5,8 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-const API = "/api/snippets";
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const API = `${API_BASE}/api/snippets`;
 
 const LANGUAGES = [
   "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#", "Go",
@@ -97,7 +98,7 @@ function App() {
   const connectWebSocket = useCallback((snippetId) => {
     if (stompClient.current) return;
 
-    const socket = new SockJS('/ws');
+    const socket = new SockJS(`${API_BASE}/ws`);
     stompClient.current = new Client({
       webSocketFactory: () => socket,
       onConnect: () => {
@@ -251,7 +252,7 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUsername, password: authPassword }),
@@ -271,7 +272,7 @@ function App() {
 
   const handleSignup = async () => {
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUsername, email: authEmail, password: authPassword }),
@@ -363,7 +364,7 @@ function App() {
     if (!githubUrl.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/snippets/github?url=${encodeURIComponent(githubUrl)}`);
+      const res = await fetch(`${API_BASE}/api/snippets/github?url=${encodeURIComponent(githubUrl)}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setFormCode(data.code);

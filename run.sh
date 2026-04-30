@@ -8,13 +8,27 @@ sleep 2
 
 echo "Starting Backend..."
 cd backend
-./mvnw spring-boot:run &
+# Using mvn instead of ./mvnw to match user's local Maven installation
+mvn spring-boot:run &
 BACKEND_PID=$!
+cd ..
+
+echo "Waiting for backend to start (this takes ~20 seconds)..."
+while ! /bin/bash -c "echo > /dev/tcp/localhost/8080" 2>/dev/null; do
+    sleep 2
+done
+echo "Backend is up on port 8080!"
 
 echo "Starting Frontend..."
-cd ../frontend
+cd frontend
+# Install dependencies if node_modules is missing
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+fi
 npm run dev &
 FRONTEND_PID=$!
+cd ..
 
 echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"

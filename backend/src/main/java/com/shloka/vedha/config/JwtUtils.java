@@ -2,6 +2,7 @@ package com.shloka.vedha.config;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +18,17 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class JwtUtils {
 
-    private final String SECRET = "this-is-a-very-secure-static-secret-key-for-vedha-01";
-    private final SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+    @Value("${vedha.jwt.secret:this-is-a-very-secure-static-secret-key-for-vedha-01}")
+    private String secret;
+
+    private SecretKey key;
+
+    private SecretKey getKey() {
+        if (key == null) {
+            key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        }
+        return key;
+    }
     private final long expiration = 86400000; // 24 hours
 
     public String extractUsername(String token) {
@@ -36,7 +46,7 @@ public class JwtUtils {
 
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
-                .verifyWith(key)
+                .verifyWith(getKey())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
@@ -57,7 +67,7 @@ public class JwtUtils {
                 .subject(subject)
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + expiration))
-                .signWith(key)
+                .signWith(getKey())
                 .compact();
     }
 
