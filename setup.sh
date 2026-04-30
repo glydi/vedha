@@ -5,16 +5,39 @@
 echo "====================================================="
 echo "  Render Configuration Setup Script for Vedha"
 echo "====================================================="
+
+# If running on Render Native (Node environment), install Java 21 LTS
+if ! command -v java &> /dev/null; then
+    echo "☕ Java not found! Automatically downloading OpenJDK 21 LTS..."
+    wget -qO jdk.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+    tar xzf jdk.tar.gz
+    rm jdk.tar.gz
+    JDK_DIR=$(find . -maxdepth 1 -type d -name "jdk-21*" | head -n 1)
+    export JAVA_HOME="$PWD/${JDK_DIR#./}"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    echo "✅ OpenJDK 21 installed at $JAVA_HOME"
+fi
+
 echo "This script will help you configure your database"
 echo "credentials across render.yaml and properties files."
 echo "Press ENTER to keep the current value shown in brackets."
 echo ""
+# Just in case we are running absolutely non-interactively on a CI server:
+if [ ! -t 0 ]; then
+    echo "Non-interactive environment detected (CI/CD). Skipping prompts and using defaults."
+    export ASSUME_YES="true"
+fi
 
 # Helper function to prompt and read
 prompt() {
     local prompt_text=$1
     local var_name=$2
     local current_val=$3
+    
+    if [ "$ASSUME_YES" = "true" ]; then
+        eval $var_name=\"$current_val\"
+        return
+    fi
     
     read -p "$prompt_text [$current_val]: " input
     if [ -z "$input" ]; then
@@ -83,8 +106,22 @@ else
     echo "❌ Could not find $RENDER_FILE"
 fi
 
+echo "--- 3. Compiling Frontend for Native Fullstack Serving ---"
+echo "Building frontend so Spring Boot can serve everything on a single port..."
+
+cd frontend
+npm ci
+npm run build
+cd ..
+
+# Clear any existing static files and copy the new production frontend build
+rm -rf backend/src/main/resources/static
+mkdir -p backend/src/main/resources/static
+cp -r frontend/dist/* backend/src/main/resources/static/
+echo "✅ Frontend injected into Spring Boot resources!"
+
 echo ""
 echo "====================================================="
-echo "Setup complete! Your configurations are updated."
-echo "You can now commit these changes and push to Render."
+echo "Setup complete! Your application is compiled and your "
+echo "configurations are updated for native cloud hosting!"
 echo "====================================================="
