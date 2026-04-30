@@ -8,8 +8,11 @@ sleep 2
 
 echo "Starting Backend..."
 cd backend
-# Using mvn instead of ./mvnw to match user's local Maven installation
-mvn spring-boot:run &
+if command -v mvn &> /dev/null; then
+    mvn spring-boot:run &
+else
+    ./mvnw spring-boot:run &
+fi
 BACKEND_PID=$!
 cd ..
 
